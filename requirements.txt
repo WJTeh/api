@@ -7,3 +7,5 @@ python-dotenv==1.0.0
 torch==2.0.0
 python-multipart==0.0.6
 numpy==1.24.2
+uvicorn==0.23.1
+pydantic==2.1.1  # Used for data validation and settings
