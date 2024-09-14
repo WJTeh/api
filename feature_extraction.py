@@ -29,18 +29,17 @@ async def upload_images(name: str = Form(...), files: List[UploadFile] = File(..
         return {"error": "At least one image is required."}
 
     # Check if a name already exists in the database
-    existing_images = qclient.search(
-        collection_name="test",
-        limit=1,  # We only care if at least one match is found
-        query_filter=Filter(
-            must=[
-                FieldCondition(
-                    key="name",
-                    match={"value": name}
-                )
-            ]
-        )
+    existing_images = qclient.has_filter(
+    collection_name="test",
+    filter=Filter(
+        must=[
+            FieldCondition(
+                key="name",
+                match={"value": name}
+            )
+        ]
     )
+)
 
     # If there's already an image with the same name, return an error
     if existing_images:
