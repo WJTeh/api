@@ -27,9 +27,26 @@ processor = ViTImageProcessor.from_pretrained("google/vit-base-patch16-224-in21k
 async def upload_images(name: str = Form(...), files: List[UploadFile] = File(...)):
     if not files:
         return {"error": "At least one image is required."}
-    
-    image_ids = []
 
+    # Check if a name already exists in the database
+    existing_images = qclient.search(
+        collection_name="test",
+        limit=1,  # We only care if at least one match is found
+        query_filter=Filter(
+            must=[
+                FieldCondition(
+                    key="name",
+                    match={"value": name}
+                )
+            ]
+        )
+    )
+
+    # If there's already an image with the same name, return an error
+    if existing_images:
+        return {"error": f"Object with name '{name}' already exists."}
+
+    image_ids = []
     for image in files:
         image_bytes = await image.read()
         pil_image = Image.open(io.BytesIO(image_bytes))
@@ -49,6 +66,7 @@ async def upload_images(name: str = Form(...), files: List[UploadFile] = File(..
         }])
 
     return {"status": "success", "ids": image_ids, "name": name}
+
 
 @app.post("/query")
 async def query_image(files: List[UploadFile] = File(...), name: str = Form(...)):
@@ -89,7 +107,7 @@ async def query_image(files: List[UploadFile] = File(...), name: str = Form(...)
         print(f"Average similarity score: {average_similarity}")
 
         # Set a threshold to determine if the objects are similar
-        threshold = 0.8  # You can adjust this threshold as needed
+        threshold = 0.7  # You can adjust this threshold as needed
 
         # Determine if the objects in the query images are a match
         is_match = average_similarity >= threshold
