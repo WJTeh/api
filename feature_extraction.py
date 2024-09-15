@@ -39,23 +39,22 @@ async def upload_images(name: str = Form(...), files: List[UploadFile] = File(..
     scene_embeddings = outputs.logits.squeeze().tolist()
 
     # Query Qdrant for images with the same name
+# Query Qdrant for images with the same name
     results = qclient.search(
         collection_name="test",
         query_vector=scene_embeddings,
-        limit=1,  # Adjust the limit as needed
+        limit=1,
         query_filter=Filter(
-            must=[
-                FieldCondition(
-                    key="name",
-                    match={"value": name}
-                )
-            ]
+            must=[FieldCondition(key="name", match={"value": name})]
         )
     )
-    similarity_scores.append(results.score)
+
+    if results and results[0].score:
+        similarity_scores.append(results[0].score)
 
     if similarity_scores:
         return {"message": "Duplicated belonging's name found."}
+
  
     for image in files:
         image_bytes = await image.read()
@@ -106,20 +105,23 @@ async def query_image(files: List[UploadFile] = File(...), name: str = Form(...)
         )
 
         # Calculate similarity scores for all matches
-        for result in results:
-            similarity_scores.append(result.score)
+    for result in results:
+        if result and "score" in result:
+            similarity_scores.append(result["score"])
+        else:
+            print(f"Error: result missing 'score'. Result: {result}")
 
-    if similarity_scores:
-        # Compute the average similarity score
-        average_similarity = mean(similarity_scores)
-        print(f"Average similarity score: {average_similarity}")
-
-        # Set a threshold to determine if the objects are similar
-        threshold = 0.7  # You can adjust this threshold as needed
-
-        # Determine if the objects in the query images are a match
-        is_match = average_similarity >= threshold
-
-        return {"result": {"average_similarity": average_similarity, "is_match": is_match}}
-    else:
+    if not similarity_scores:
         return {"message": "No matching images found."}
+
+    # Compute the average similarity score
+    average_similarity = mean(similarity_scores)
+    print(f"Average similarity score: {average_similarity}")
+
+    # Set a threshold to determine if the objects are similar
+    threshold = 0.7
+
+    # Determine if the objects in the query images are a match
+    is_match = average_similarity >= threshold
+
+    return {"result": {"average_similarity": average_similarity, "is_match": is_match}}
