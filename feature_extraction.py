@@ -29,7 +29,48 @@ processor = ViTImageProcessor.from_pretrained("google/vit-base-patch16-224-in21k
 async def upload_images(name: str = Form(...), files: List[UploadFile] = File(...)):
     if not files:
         return {"error": "At least one image is required."}
-    
+
+    try:
+        # Log the incoming request for better debugging
+        print(f"Received UPLOAD request with name: {name}")
+        
+        # Apply filter to check if a belonging with the same name exists in the Qdrant database
+        filter_conditions = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="name",
+                    match=models.MatchValue(value=name)
+                )
+            ]
+        )
+        
+        # Use scroll API to check if the belonging already exists
+        scroll_response = qclient.scroll(
+            collection_name="test",  # Replace with your collection name
+            scroll_filter=filter_conditions,
+            limit=1,  # We only need to check if at least one point exists
+            with_payload=True,
+            with_vectors=False,  # We only need payload for this check, not vectors
+        )
+        
+        # Unpack the scroll response
+        points, next_page_offset = scroll_response
+        
+        # Log the scroll response for debugging purposes
+        print(f"Scroll API response: points={points}, next_page_offset={next_page_offset}")
+
+        # If points are returned, a belonging with the same name already exists
+        if points:
+            return {"error": f"A belonging with the name '{name}' already exists."}
+
+    except Exception as e:
+        # Log the error with traceback for debugging purposes
+        import traceback
+        error_message = f"Error during scroll operation: {str(e)}\n{traceback.format_exc()}"
+        print(error_message)
+        return {"error": "Internal Server Error occurred during duplicate check."}
+
+    # If no duplicates, proceed with image upload and embedding generation
     image_ids = []
 
     for image in files:
@@ -43,15 +84,15 @@ async def upload_images(name: str = Form(...), files: List[UploadFile] = File(..
         image_id = str(uuid.uuid4())
         image_ids.append(image_id)
 
-        # Store embeddings in Qdrant with the name
+        # Store embeddings in Qdrant with the name as the payload
         qclient.upsert(collection_name="test", points=[{
-            "id": image_id,  # Use UUID instead of filename
+            "id": image_id,  # Use UUID for the point ID
             "vector": embeddings,
             "payload": {"name": name}  # Store the name in the payload
         }])
 
-    return {"status": "success", "ids": image_ids, "name": name}    
-   
+    return {"status": "success", "ids": image_ids, "name": name}
+
 
 @app.post("/query")
 async def query_image(files: List[UploadFile] = File(...), name: str = Form(...)):
@@ -102,10 +143,12 @@ async def query_image(files: List[UploadFile] = File(...), name: str = Form(...)
         return {"message": "No matching images found."}
 
 
-
 @app.delete("/delete")
 async def delete_belonging(name: str = Query(...)):
     try:
+        # Log the incoming request
+        print(f"Received DELETE request to delete belongings with name: {name}")
+
         # Apply filter to select points by 'name'
         filter_conditions = models.Filter(
             must=[
@@ -116,21 +159,43 @@ async def delete_belonging(name: str = Query(...)):
             ]
         )
         
-        points_selector = models.FilterSelector(filter=filter_conditions)
-        
-        # Delete the points from the collection
-        response = qclient.delete(
+        # Use scroll API to check if the point exists
+        scroll_response = qclient.scroll(
             collection_name="test",  # Replace with your collection name
-            points_selector=points_selector
+            scroll_filter=filter_conditions,
+            limit=1,  # Limit to 1 point to check existence
+            with_payload=True,
+            with_vectors=False,
         )
         
-        # Check response or deletion count
-        if response.status == "ok":
-            return {"message": f"Belonging with name '{name}' deleted successfully."}
+        # Unpack the scroll response
+        points, next_page_offset = scroll_response
+        
+        # Log the scroll response
+        print(f"Scroll API response: points={points}, next_page_offset={next_page_offset}")
+
+        if points:
+            # If points are returned, the point exists, so proceed with deletion
+            delete_response = qclient.delete(
+                collection_name="test",  # Replace with your collection name
+                points_selector=models.FilterSelector(filter=filter_conditions)
+            )
+            
+            # Log the response from Qdrant
+            print(f"Qdrant delete response: {delete_response}")
+
+            if delete_response.status == "ok" or delete_response.status == "completed":
+                return {"message": f"Belonging with name '{name}' deleted successfully."}
+            else:
+                print(f"Failed to delete belongings. Response status: {delete_response.status}")
+                raise HTTPException(status_code=500, detail=f"Failed to delete belonging. Response status: {delete_response.status}")
         else:
-            raise HTTPException(status_code=500, detail="Failed to delete belonging.")
+            # Point does not exist
+            return {"message": f"No belongings found with name '{name}'."}
     
     except Exception as e:
-        # Log the error for debugging purposes
-        print(f"Error occurred: {str(e)}")
+        # Log the error with traceback for debugging purposes
+        import traceback
+        error_message = f"Error occurred: {str(e)}\n{traceback.format_exc()}"
+        print(error_message)
         raise HTTPException(status_code=500, detail="Internal Server Error occurred while deleting belongings.")
