@@ -100,7 +100,7 @@ async def query_image(files: List[UploadFile] = File(...), name: str = Form(...)
         return {"message": "No matching images found."}
 
 
-@app.delete("/delete")
+@app.post("/delete")
 async def delete_belongings(name: str = Form(...)):
     try:
         # Step 1: Delete the items using the filter
