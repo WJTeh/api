@@ -25,15 +25,34 @@ qclient = QdrantClient(url=qdrant_db_url, api_key=qdrant_api_key)
 model = ViTForImageClassification.from_pretrained("google/vit-base-patch16-224-in21k")
 processor = ViTImageProcessor.from_pretrained("google/vit-base-patch16-224-in21k")
 
-@app.post("/upload")
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from pydantic import BaseModel
+from typing import List
+from qdrant_client import models
+import uuid
+import io
+from PIL import Image
+import traceback
+
+app = FastAPI()
+
+# Custom response model
+class UploadResponse(BaseModel):
+    status: str
+    message: str
+    ids: List[str] = None  # Optional for when upload is successful
+    name: str = None       # Optional, only include in successful upload
+
+
+@app.post("/upload", response_model=UploadResponse)
 async def upload_images(name: str = Form(...), files: List[UploadFile] = File(...)):
     if not files:
-        return {"error": "At least one image is required."}
+        raise HTTPException(status_code=400, detail={"status": "failed", "message": "At least one image is required."})
 
     try:
         # Log the incoming request for better debugging
         print(f"Received UPLOAD request with name: {name}")
-        
+
         # Apply filter to check if a belonging with the same name exists in the Qdrant database
         filter_conditions = models.Filter(
             must=[
@@ -43,7 +62,7 @@ async def upload_images(name: str = Form(...), files: List[UploadFile] = File(..
                 )
             ]
         )
-        
+
         # Use scroll API to check if the belonging already exists
         scroll_response = qclient.scroll(
             collection_name="test",  # Replace with your collection name
@@ -52,7 +71,7 @@ async def upload_images(name: str = Form(...), files: List[UploadFile] = File(..
             with_payload=True,
             with_vectors=False,  # We only need payload for this check, not vectors
         )
-        
+
         # Unpack the scroll response
         points, next_page_offset = scroll_response
         
@@ -61,37 +80,51 @@ async def upload_images(name: str = Form(...), files: List[UploadFile] = File(..
 
         # If points are returned, a belonging with the same name already exists
         if points:
-            return {"error": f"A belonging with the name '{name}' already exists."}
+            return UploadResponse(
+                status="failed",
+                message=f"A belonging with the name '{name}' already exists."
+            )
 
     except Exception as e:
         # Log the error with traceback for debugging purposes
-        import traceback
         error_message = f"Error during scroll operation: {str(e)}\n{traceback.format_exc()}"
         print(error_message)
-        return {"error": "Internal Server Error occurred during duplicate check."}
+        raise HTTPException(status_code=500, detail={"status": "failed", "message": "Internal Server Error occurred during duplicate check."})
 
     # If no duplicates, proceed with image upload and embedding generation
     image_ids = []
 
-    for image in files:
-        image_bytes = await image.read()
-        pil_image = Image.open(io.BytesIO(image_bytes))
-        inputs = processor(images=pil_image, return_tensors="pt")
-        outputs = model(**inputs)
-        embeddings = outputs.logits.squeeze().tolist()
+    try:
+        for image in files:
+            image_bytes = await image.read()
+            pil_image = Image.open(io.BytesIO(image_bytes))
+            inputs = processor(images=pil_image, return_tensors="pt")
+            outputs = model(**inputs)
+            embeddings = outputs.logits.squeeze().tolist()
 
-        # Generate a UUID for the image
-        image_id = str(uuid.uuid4())
-        image_ids.append(image_id)
+            # Generate a UUID for the image
+            image_id = str(uuid.uuid4())
+            image_ids.append(image_id)
 
-        # Store embeddings in Qdrant with the name as the payload
-        qclient.upsert(collection_name="test", points=[{
-            "id": image_id,  # Use UUID for the point ID
-            "vector": embeddings,
-            "payload": {"name": name}  # Store the name in the payload
-        }])
+            # Store embeddings in Qdrant with the name as the payload
+            qclient.upsert(collection_name="test", points=[{
+                "id": image_id,  # Use UUID for the point ID
+                "vector": embeddings,
+                "payload": {"name": name}  # Store the name in the payload
+            }])
 
-    return {"status": "success", "ids": image_ids, "name": name}
+    except Exception as e:
+        error_message = f"Error during image processing/upload: {str(e)}\n{traceback.format_exc()}"
+        print(error_message)
+        raise HTTPException(status_code=500, detail={"status": "failed", "message": "Internal Server Error occurred while uploading images."})
+
+    return UploadResponse(
+        status="success",
+        message="Images uploaded successfully.",
+        ids=image_ids,
+        name=name
+    )
+
 
 
 @app.post("/query")
