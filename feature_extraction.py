@@ -81,23 +81,20 @@ async def query_image(files: List[UploadFile] = File(...), name: str = Form(...)
         )
 
         # Calculate similarity scores for all matches
-    for result in results:
-        if result and "score" in result:
-            similarity_scores.append(result["score"])
-        else:
-            print(f"Error: result missing 'score'. Result: {result}")
+        for result in results:
+            similarity_scores.append(result.score)
 
-    if not similarity_scores:
+    if similarity_scores:
+        # Compute the average similarity score
+        average_similarity = mean(similarity_scores)
+        print(f"Average similarity score: {average_similarity}")
+
+        # Set a threshold to determine if the objects are similar
+        threshold = 0.7  # You can adjust this threshold as needed
+
+        # Determine if the objects in the query images are a match
+        is_match = average_similarity >= threshold
+
+        return {"result": {"average_similarity": average_similarity, "is_match": is_match}}
+    else:
         return {"message": "No matching images found."}
-
-    # Compute the average similarity score
-    average_similarity = mean(similarity_scores)
-    print(f"Average similarity score: {average_similarity}")
-
-    # Set a threshold to determine if the objects are similar
-    threshold = 0.7
-
-    # Determine if the objects in the query images are a match
-    is_match = average_similarity >= threshold
-
-    return {"result": {"average_similarity": average_similarity, "is_match": is_match}}
