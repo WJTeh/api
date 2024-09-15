@@ -114,18 +114,18 @@ async def delete_belonging(name: str = Query(...)):
             ]
         )
 
-        # Delete the points from the collection
+        # Delete the points from the collection using the filter directly
         response = qclient.delete(
             collection_name="test",  # Replace with your collection name
-            points_selector=FilterSelector(filter=filter_conditions)
+            filter=filter_conditions
         )
 
         # Check response or deletion count
-        if response.status == "ok":
+        if response.status == "acknowledged":
             return {"message": f"Belongings with name '{name}' deleted successfully."}
         else:
             raise HTTPException(status_code=500, detail="Failed to delete belongings.")
-    
+
     except Exception as e:
         # Log the error for debugging purposes
         print(f"Error occurred: {str(e)}")
