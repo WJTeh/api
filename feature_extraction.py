@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, HTTPException, UploadFile, Form
 from transformers import ViTForImageClassification, ViTImageProcessor
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Filter, FieldCondition
@@ -98,3 +98,25 @@ async def query_image(files: List[UploadFile] = File(...), name: str = Form(...)
         return {"result": {"average_similarity": average_similarity, "is_match": is_match}}
     else:
         return {"message": "No matching images found."}
+
+
+@app.delete("/delete")
+async def delete_belongings(name: str = Form(...)):
+    try:
+        # Step 1: Delete the items using the filter
+        qclient.delete(
+            collection_name="test",
+            filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="name",
+                        match={"value": name}
+                    )
+                ]
+            )
+        )
+
+        return {"status": "success", "message": f"Deleted all items with the name '{name}'."}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
