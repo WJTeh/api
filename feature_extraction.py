@@ -27,25 +27,36 @@ processor = ViTImageProcessor.from_pretrained("google/vit-base-patch16-224-in21k
 async def upload_images(name: str = Form(...), files: List[UploadFile] = File(...)):
     if not files:
         return {"error": "At least one image is required."}
-
-    # Check if a name already exists in the database
-    existing_images = qclient.has_filter(
-    collection_name="test",
-    filter=Filter(
-        must=[
-            FieldCondition(
-                key="name",
-                match={"value": name}
-            )
-        ]
-    )
-)
-
-    # If there's already an image with the same name, return an error
-    if existing_images:
-        return {"error": f"Object with name '{name}' already exists."}
-
+    
     image_ids = []
+
+    similarity_scores = []
+    image = files[0]
+    image_bytes = await image.read()
+    pil_image = Image.open(io.BytesIO(image_bytes))
+    inputs = processor(images=pil_image, return_tensors="pt")
+    outputs = model(**inputs)
+    scene_embeddings = outputs.logits.squeeze().tolist()
+
+    # Query Qdrant for images with the same name
+    results = qclient.search(
+        collection_name="test",
+        query_vector=scene_embeddings,
+        limit=1,  # Adjust the limit as needed
+        query_filter=Filter(
+            must=[
+                FieldCondition(
+                    key="name",
+                    match={"value": name}
+                )
+            ]
+        )
+    )
+    similarity_scores.append(results.score)
+
+    if similarity_scores:
+        return {"message": "Duplicated belonging's name found."}
+ 
     for image in files:
         image_bytes = await image.read()
         pil_image = Image.open(io.BytesIO(image_bytes))
@@ -63,8 +74,6 @@ async def upload_images(name: str = Form(...), files: List[UploadFile] = File(..
             "vector": embeddings,
             "payload": {"name": name}  # Store the name in the payload
         }])
-
-    return {"status": "success", "ids": image_ids, "name": name}
 
 
 @app.post("/query")
