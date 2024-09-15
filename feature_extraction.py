@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, HTTPException, UploadFile, Form
+from fastapi import FastAPI, File, HTTPException, UploadFile, Form, Query
 from transformers import ViTForImageClassification, ViTImageProcessor
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Filter, FieldCondition, MatchValue, FilterSelector
@@ -102,7 +102,7 @@ async def query_image(files: List[UploadFile] = File(...), name: str = Form(...)
 
 
 @app.delete("/delete")
-async def delete_belonging(name: str):
+async def delete_belonging(name: str = Query(...)):
     try:
         # Apply filter to select points by 'name'
         filter_conditions = Filter(
