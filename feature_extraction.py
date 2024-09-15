@@ -30,32 +30,6 @@ async def upload_images(name: str = Form(...), files: List[UploadFile] = File(..
     
     image_ids = []
 
-    similarity_scores = []
-    image = files[0]
-    image_bytes = await image.read()
-    pil_image = Image.open(io.BytesIO(image_bytes))
-    inputs = processor(images=pil_image, return_tensors="pt")
-    outputs = model(**inputs)
-    scene_embeddings = outputs.logits.squeeze().tolist()
-
-    # Query Qdrant for images with the same name
-# Query Qdrant for images with the same name
-    results = qclient.search(
-        collection_name="test",
-        query_vector=scene_embeddings,
-        limit=1,
-        query_filter=Filter(
-            must=[FieldCondition(key="name", match={"value": name})]
-        )
-    )
-
-    if results and results[0].score:
-        similarity_scores.append(results[0].score)
-
-    if similarity_scores:
-        return {"message": "Duplicated belonging's name found."}
-
- 
     for image in files:
         image_bytes = await image.read()
         pil_image = Image.open(io.BytesIO(image_bytes))
@@ -74,6 +48,8 @@ async def upload_images(name: str = Form(...), files: List[UploadFile] = File(..
             "payload": {"name": name}  # Store the name in the payload
         }])
 
+    return {"status": "success", "ids": image_ids, "name": name}    
+   
 
 @app.post("/query")
 async def query_image(files: List[UploadFile] = File(...), name: str = Form(...)):
