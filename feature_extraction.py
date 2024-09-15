@@ -2,6 +2,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile, Form, Query
 from transformers import ViTForImageClassification, ViTImageProcessor
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Filter, FieldCondition, MatchValue, FilterSelector
+from qdrant_client.http import models
 
 from PIL import Image
 import io
@@ -101,31 +102,34 @@ async def query_image(files: List[UploadFile] = File(...), name: str = Form(...)
         return {"message": "No matching images found."}
 
 
+
 @app.delete("/delete")
 async def delete_belonging(name: str = Query(...)):
     try:
         # Apply filter to select points by 'name'
-        filter_conditions = Filter(
+        filter_conditions = models.Filter(
             must=[
-                FieldCondition(
+                models.FieldCondition(
                     key="name",
-                    match=MatchValue(value=name)
+                    match=models.MatchValue(value=name)
                 )
             ]
         )
-
-        # Delete the points from the collection using the filter directly
+        
+        points_selector = models.FilterSelector(filter=filter_conditions)
+        
+        # Delete the points from the collection
         response = qclient.delete(
             collection_name="test",  # Replace with your collection name
-            filter=filter_conditions
+            points_selector=points_selector
         )
-
+        
         # Check response or deletion count
-        if response.status == "acknowledged":
-            return {"message": f"Belongings with name '{name}' deleted successfully."}
+        if response.status == "ok":
+            return {"message": f"Belonging with name '{name}' deleted successfully."}
         else:
-            raise HTTPException(status_code=500, detail="Failed to delete belongings.")
-
+            raise HTTPException(status_code=500, detail="Failed to delete belonging.")
+    
     except Exception as e:
         # Log the error for debugging purposes
         print(f"Error occurred: {str(e)}")
