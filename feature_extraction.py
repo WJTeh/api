@@ -82,7 +82,7 @@ async def upload_images(name: str = Form(...), files: List[UploadFile] = File(..
         if points:
             return UploadResponse(
                 status="failed",
-                message=f"A belonging with the name '{name}' already exists."
+                message=f"A belonging with the name '{name}' already exists. Please provide another name."
             )
 
     except Exception as e:
