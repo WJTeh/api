@@ -166,7 +166,7 @@ async def query_image(files: List[UploadFile] = File(...), name: str = Form(...)
         print(f"Average similarity score: {average_similarity}")
 
         # Set a threshold to determine if the objects are similar
-        threshold = 0.7  # You can adjust this threshold as needed
+        threshold = 0.8  # You can adjust this threshold as needed
 
         # Determine if the objects in the query images are a match
         is_match = average_similarity >= threshold
